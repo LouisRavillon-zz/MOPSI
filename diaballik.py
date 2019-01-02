@@ -17,8 +17,10 @@ def passe_possible(coords,t=taille):
     liste_cases=[]
     liste_cases_v=[[(coords[0]+i)%t,coords[1]] for i in range(1,t)]
     liste_cases_h=[[coords[0],(coords[1]+i)%t] for i in range(1,t)]
-    liste_cases_diag1=[[liste_cases_v[i][0],liste_cases_h[i][1]] for i in range(t-1)]
-    liste_cases_diag2=[[liste_cases_v[i][0],liste_cases_h[-i-1][1]] for i in range(t-1)]
+    liste_cases_diag1=[[(coords[0]+i),(coords[1]+i)] for i in range(1,t) if check_coords([(coords[0]+i),(coords[1]+i)])]
+    liste_cases_diag2=[[(coords[0]+i),(coords[1]-i)] for i in range(1,t) if check_coords([(coords[0]+i),(coords[1]-i)])]
+    liste_cases_diag2+=[[(coords[0]-i),(coords[1]+i)] for i in range(1,t) if check_coords([(coords[0]-i),(coords[1]+i)])]
+    liste_cases_diag2+=[[(coords[0]-i),(coords[1]-i)] for i in range(1,t) if check_coords([(coords[0]-i),(coords[1]-i)])]
     liste_cases=liste_cases_v+liste_cases_h+liste_cases_diag1+liste_cases_diag2
     return liste_cases
 
@@ -53,41 +55,45 @@ class pion:
                     
         
 class action:
-    def __init__(self,type_=rd.choice(["deplacement","passe"]),p=pion(),v=np.array([0,0])):
+    def __init__(self,type_=rd.choice(["deplacement","passe"]),p=np.array([0,0]),v=np.array([0,0])):
         self.type=type_
         self.de=p
         self.vect=v
+        def __eq__(self,a):
+            return self.type==a.type and self.de.all()==a.de.all() and self.vect.all()==a.de.all()
+    def get_num_joueur(self,plateau):
+        return plateau.plateau[self.de[0]][self.de[1]].num_joueur
     def est_legale(self,plateau):
-        nouvelle_pos=self.de.position+self.vect
+        nouvelle_pos=self.de+self.vect
         if not check_coords(nouvelle_pos):
             return False
         if self.type=="deplacement":
             if not check_empty(plateau,nouvelle_pos):
-                print("La case n'est pas vide !")
+                #print("La case n'est pas vide !")
                 return False
             if not norm1(self.vect)==1:
-                print("Trop grand déplacement !")
+                #print("Trop grand déplacement !")
                 return False
-            if self.de.a_balle:
-                print("Le pion a la balle !")
+            if plateau[self.de[0]][self.de[1]].a_balle:
+                #print("Le pion a la balle !")
                 return False
             return True
         elif self.type=="passe":
             if check_empty(plateau,nouvelle_pos):
                 return False
-            if self.de.num_joueur!=plateau[nouvelle_pos[0]][nouvelle_pos[1]].num_joueur:
+            if plateau[self.de[0]][self.de[1]].num_joueur!=plateau[nouvelle_pos[0]][nouvelle_pos[1]].num_joueur:
                 return False
-            if not coords_dans_liste(nouvelle_pos, passe_possible(self.de.position)):
+            if not coords_dans_liste(nouvelle_pos, passe_possible(self.de)):
                 return False
             return True
     def faire(self,plateau):
         if self.type=="deplacement":
             #print([self.de.position[0],self.de.position[1]])
-            plateau[self.de.position[0]][self.de.position[1]].bouge(self.vect)
+            plateau[self.de[0]][self.de[1]].bouge(self.vect)
         elif self.type=="passe":
-            nouvelle_pos=self.de.position+self.vect
+            nouvelle_pos=self.de+self.vect
             plateau[nouvelle_pos[0]][nouvelle_pos[1]].a_balle=True
-            plateau[self.de.position[0]][self.de.position[1]].a_balle=False
+            plateau[self.de[0]][self.de[1]].a_balle=False
             
             
             
@@ -124,12 +130,12 @@ class plateau:
     
     def check_victoire(self,num_joueur):
         if self.check_antijeu(3-num_joueur):
-            print("Victoire par antijeu du joueur " + str(num_joueur))
+            #print("Victoire par antijeu du joueur " + str(num_joueur))
             return True
         ligne_victoire=[self.taille-1,0]
         for p in self.pions:
             if p.position[0]==ligne_victoire[num_joueur-1] and p.num_joueur==num_joueur and p.a_balle:
-                print("Victoire classique de " + str(num_joueur))
+                #-print("Victoire classique de " + str(num_joueur))
                 return True
         return False
     
@@ -141,6 +147,8 @@ class plateau:
         for action in actions:
             self.jouer(num_joueur,action)
     def selection_pions(self,joueur):
+        
+        self.rafraichir()
         return [p for p in self.pions if p.num_joueur==joueur]
     def draw(self):
         chaine=""
@@ -154,85 +162,103 @@ class plateau:
             chaine+="\n\n"
         print(chaine)
 
-def deplacement_naif(pion,plateau):
-    for a in [-1,0,1]:
-        for b in [-1,0,1]:
+def deplacement_naif(pos,plateau):
+    pion=plateau.plateau[pos[0]][pos[1]]
+    l=L=[-1,0,1]
+    rd.shuffle(l)
+    rd.shuffle(L)
+    for a in l:
+        
+        for b in L:
             if norm1([a,b])==1:
-                A=action("deplacement",pion,[a,b])
+                A=action("deplacement",pion.position,np.array([a,b]))
                 if A.est_legale(plateau.plateau):
                     return A
     return False
-def passe_naive(pion,plateau):
+def passe_naive(pos,plateau):
+    pion=plateau.plateau[pos[0]][pos[1]]
     for p in plateau.selection_pions(pion.num_joueur):
         #print(coords_dans_liste(p.position,passe_possible(pion.position)))
         if coords_dans_liste(p.position,passe_possible(pion.position)) and pion.a_balle:
-            if ((p.position-pion.position)[1]!=0):
-                A=action("passe",pion,p.position-pion.position)
-                if A.est_legale(plateau.plateau):
-                    return A
+            A=action("passe",pion.position,p.position-pion.position)
+            if A.est_legale(plateau.plateau):
+                return A
     return False
 Plateau=plateau()
-Plateau.draw()
 
-# while not Plateau.check_victoire(1) and not Plateau.check_victoire(2):
-#     for joueur in [1,2]:
-#         Actions=[]
-#         pions_i=Plateau.selection_pions(joueur)
-#         k=rd.randint(0,len(pions_i)-1)
-#         for i in range(rd.randint(1,3)):
-#             Pass=passe_naive(pions_i[k],Plateau)
-#             Move=deplacement_naif(pions_i[k],Plateau)
-#             if rd.random()<0.9 and Pass!=False:
-#                 Actions+=[Pass]
-#             elif Move!=False:
-#                 Actions+=[Move]
-#         Plateau.jouer(joueur,Actions)
-#         Plateau.draw()
-#         print(10*"\n")
+# A=[action("passe",np.array([0,3]),np.array([0,-1])),action("deplacement",np.array([0,3]),np.array([1,0])),action("deplacement",np.array([1,3]),np.array([1,0]))]
+# Plateau.jouer_trois(1,A)
+# B=[action("passe",np.array([6,3]),np.array([0,-1])),action("deplacement",np.array([6,3]),np.array([-1,0])),action("deplacement",np.array([5,3]),np.array([0,1]))]
+# Plateau.jouer_trois(2,B)
+# C=[action("deplacement",np.array([0,4]),np.array([0,-1])),action("passe",np.array([0,2]),np.array([0,1])),action("deplacement",np.array([2,3]),np.array([1,0]))]
+# Plateau.jouer_trois(1,C)
+# D=[action("deplacement",np.array([i,3]),np.array([1,0])) for i in range(3,6)]
+# Plateau.jouer_trois(1,D)
+# E=[action("deplacement",np.array([5,3]),np.array([1,0])),action("passe",np.array([0,3]),np.array([6,0]))]
+# Plateau.jouer_trois(1,E)
+# Plateau.check_victoire(1)
+# Plateau.draw()
 
-# def actions_possibles(pion,plateau=Plateau):
-#     Actions=[]
-#     for a in [-1,0,1]:
-#         for b in [-1,0,1]:
-#             if norm1([a,b])==1:
-#                 A=action("deplacement",pion,np.array([a,b]))
-#                 if A.est_legale(plateau.plateau):
-#                     Actions+=[A]
-#     if pion.a_balle:
-#         for c in passe_possible(pion.position):
-#             A=action("passe",pion,np.array(c)-pion.position)
-#             if A.est_legale(plateau.plateau):
-#                 Actions+=[A]
-#     return Actions
+# Plateau.draw()
+# s1=s2=0
+# for c in range(500):
+#     Plateau=plateau()
+#     while not Plateau.check_victoire(1) and not Plateau.check_victoire(2):
+        
+#         for joueur in [1,2]:
+#             Actions=[]
+#             pions_i=Plateau.selection_pions(joueur)
+#             k=rd.randint(0,len(pions_i)-1)
+#             for i in range(rd.randint(1,3)):
+#                 Pass=passe_naive(pions_i[k].position,Plateau)
+#                 Move=deplacement_naif(pions_i[k].position,Plateau)
+#                 if rd.random()<0.9 and Pass!=False:
+#                     Actions+=[Pass]
+#                 elif Move!=False:
+#                     Actions+=[Move]
+#             Plateau.jouer_trois(joueur,Actions)
+#             # Plateau.draw()
+#             # print(10*"\n")
+#             # time.sleep(3)
+#     s1+=Plateau.check_victoire(1)
+#     s2+=Plateau.check_victoire(2)
+# #Plateau.draw()
+# print('\n')
+# print(s1/500)
+# print(s2/500)
 
-# def trois_actions_possibles(num_joueur,plateau=Plateau):
-#     Actions_1=[actions_possibles(pion,plateau) for pion in plateau.selection_pions(num_joueur)]
-#     Actions_2=[]
-#     for a in Actions_1:
-#         plateau_copie=copy.deepcopy(plateau)
-#         a[0].faire(plateau_copie.plateau)
-#         A=[actions_possibles(pion,plateau_copie) for pion in plateau_copie.selection_pions(num_joueur)]
-#         Actions_2+=[[a[0],b[0]] for b in A]
-#     Actions_3=[]
-#     for a in Actions_2:
-#         plateau_copie=copy.deepcopy(plateau)
-#         a[0].faire(plateau_copie.plateau)
-#         a[1].faire(plateau_copie.plateau)
-#         A=[actions_possibles(pion,plateau_copie) for pion in plateau_copie.selection_pions(num_joueur)]
-#         Actions_3+=[a+b for b in A]
-#     return Actions_1+Actions_2+Actions_3
+Plateau=plateau()   
+def actions_possibles(pos,plateau=Plateau):
+    pion=plateau.plateau[pos[0]][pos[1]]
+    Actions=[]
+    for a in [-1,0,1]:
+        for b in [-1,0,1]:
+            if norm1([a,b])==1:
+                A=action("deplacement",pos,np.array([a,b]))
+                if A.est_legale(plateau.plateau):
+                    Actions+=[A]
+    if pion.a_balle:
+        for c in passe_possible(pos):
+            A=action("passe",pos,np.array(c)-pion.position)
+            if A.est_legale(plateau.plateau):
+                Actions+=[A]
+    return Actions
 
-# a_p=actions_possibles(Plateau.pions[0])
-# for a in a_p:
-#     temp=copy.deepcopy(Plateau)
-#     temp.jouer(1,[a])
-#     temp.draw()
+    
+def trois_actions_possibles(num_joueur,plateau=Plateau,l=[],L=[],n=-1):
+    
 
-A=action("deplacement",Plateau.plateau[0][2],np.array([1,0]))
+a_p=trois_actions_possibles(1)
+for a in a_p:
+    temp=plateau()
+    temp.jouer_trois(1,a)
+    temp.draw()
 
-Plateau.jouer_trois(1,[A])
-B=action("deplacement",Plateau.plateau[1][2],np.array([1,0]))
-print(Plateau.plateau[1][2])
-Plateau.jouer_trois(1,[B])
+# A=action("deplacement",Plateau.plateau[0][2],np.array([1,0]))
 
-Plateau.draw()
+# Plateau.jouer_trois(1,[A])
+# B=action("deplacement",Plateau.plateau[1][2],np.array([1,0]))
+# print(Plateau.plateau[1][2])
+# Plateau.jouer_trois(1,[B])
+
+# Plateau.draw()
